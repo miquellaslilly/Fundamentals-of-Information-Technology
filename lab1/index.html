@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>График зависимости итераций от параметра релаксации</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { width: 80%; margin: 0 auto; }
+        canvas { max-height: 500px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Зависимость количества итераций от параметра ω</h1>
+        <p>Метод простой итерации для СЛАУ 5-го порядка</p>
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <script>
+        // Загрузка данных
+        fetch('data.json')
+            .then(response => response.json())
+            .then(data => {
+                const labels = data.map(item => item.omega);
+                const iterations = data.map(item => item.iterations);
+
+                const ctx = document.getElementById('myChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Количество итераций',
+                            data: iterations,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderWidth: 2,
+                            pointRadius: 5,
+                            pointBackgroundColor: 'rgba(255, 99, 132, 1)',
+                            fill: false,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Параметр релаксации ω'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Количество итераций (it)'
+                                },
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Оптимизация параметра релаксации'
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(error => console.error('Ошибка загрузки данных:', error));
+    </script>
+</body>
+</html>

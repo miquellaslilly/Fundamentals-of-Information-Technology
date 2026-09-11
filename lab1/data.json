@@ -1,0 +1,42 @@
+[
+  {
+    "omega": 0.2,
+    "iterations": 1264
+  },
+  {
+    "omega": 0.4,
+    "iterations": 773
+  },
+  {
+    "omega": 0.6,
+    "iterations": 602
+  },
+  {
+    "omega": 0.8,
+    "iterations": 512
+  },
+  {
+    "omega": 1,
+    "iterations": 456
+  },
+  {
+    "omega": 1.2,
+    "iterations": 416
+  },
+  {
+    "omega": 1.4,
+    "iterations": 388
+  },
+  {
+    "omega": 1.6,
+    "iterations": 365
+  },
+  {
+    "omega": 1.8,
+    "iterations": 347
+  },
+  {
+    "omega": 2,
+    "iterations": 332
+  }
+]
