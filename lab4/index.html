@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Поиск корней методом Ньютона</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #333; }
+        .chart-box { position: relative; height: 400px; margin: 30px 0; }
+        .error-box { background: #ffe0e0; color: #a00; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center; }
+        .summary { text-align: center; color: #333; font-size: 1.05em; margin: 20px 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Поиск корней f(x) = sin²(x) - x/5 - 1</h1>
+    <div id="errorBox"></div>
+    <div class="summary" id="summary"></div>
+
+    <h2>Функция на интервале [-4, 0]</h2>
+    <div class="chart-box"><canvas id="chartFunc"></canvas></div>
+
+    <h2>Сходимость x_k по итерациям</h2>
+    <div class="chart-box"><canvas id="chartXk"></canvas></div>
+
+    <h2>Погрешность d_k = |x_k - x_{k-1}| (лог. шкала)</h2>
+    <div class="chart-box"><canvas id="chartDk"></canvas></div>
+</div>
+
+<script>
+const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
+
+function buildFuncChart() {
+    // Строим график функции на [-4, 0]
+    const pts = [];
+    for (let x = -4; x <= 0.0001; x += 0.05) {
+        pts.push({ x: parseFloat(x.toFixed(3)), y: Math.pow(Math.sin(x), 2) - x/5 - 1 });
+    }
+
+    new Chart(document.getElementById('chartFunc'), {
+        type: 'line',
+        data: {
+            datasets: [
+                { label: 'f(x)', data: pts, borderColor: 'blue', borderWidth: 2, pointRadius: 0, showLine: true },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            parsing: false,
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'x' } },
+                y: { title: { display: true, text: 'f(x)' } }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: { label: ctx => `x=${ctx.parsed.x.toFixed(3)}, y=${ctx.parsed.y.toFixed(4)}` }
+                }
+            }
+        }
+    });
+}
+
+function buildConvergenceCharts(results) {
+    // x_k по итерациям
+    const maxIter = Math.max(...results.map(r => r.history.length));
+    const labels = Array.from({ length: maxIter }, (_, i) => i);
+
+    const datasetsXk = results.map((r, i) => ({
+        label: `Корень ${i+1} (x0=${r.x0.toFixed(3)})`,
+        data: r.history.map(it => it.xk),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS[i % COLORS.length],
+        borderWidth: 2,
+        pointRadius: 5,
+        showLine: true,
+        spanGaps: true
+    }));
+
+    new Chart(document.getElementById('chartXk'), {
+        type: 'line',
+        data: { labels, datasets: datasetsXk },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: 'k (номер итерации)' } },
+                y: { title: { display: true, text: 'x_k' } }
+            }
+        }
+    });
+
+    // d_k (погрешность) — логарифмическая шкала
+    const datasetsDk = results.map((r, i) => ({
+        label: `Корень ${i+1}`,
+        data: r.history.map(it => Math.abs(it.dx) > 0 ? Math.abs(it.dx) : null),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS[i % COLORS.length],
+        borderWidth: 2,
+        pointRadius: 5,
+        showLine: true,
+        spanGaps: true
+    }));
+
+    new Chart(document.getElementById('chartDk'), {
+        type: 'line',
+        data: { labels, datasets: datasetsDk },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: 'k (номер итерации)' } },
+                y: {
+                    type: 'logarithmic',
+                    title: { display: true, text: '|d_k| = |x_k - x_{k-1}|' }
+                }
+            }
+        }
+    });
+}
+
+fetch('roots_data.json?t=' + Date.now())
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
+    .then(data => {
+        console.log('Загружено:', data);
+        if (!Array.isArray(data) || data.length === 0) {
+            document.getElementById('errorBox').innerHTML =
+                '<div class="error-box">Пустой JSON или нет данных о корнях.</div>';
+            return;
+        }
+
+        // Сводка
+        let html = '<b>Найденные корни:</b><br>';
+        data.forEach((r, i) => {
+            html += `x<sub>${i+1}</sub>* = <b>${r.root.toFixed(8)}</b> ` +
+                    `(f = ${r.froot.toExponential(2)}, итераций: ${r.iterations})<br>`;
+        });
+        document.getElementById('summary').innerHTML = html;
+
+        buildFuncChart();
+        buildConvergenceCharts(data);
+    })
+    .catch(e => {
+        console.error(e);
+        document.getElementById('errorBox').innerHTML =
+            '<div class="error-box">Ошибка загрузки roots_data.json: ' + e.message +
+            '<br>Запустите локальный сервер (python -m http.server 8080) и откройте http://localhost:8080/index.html</div>';
+    });
+</script>
+</body>
+</html>

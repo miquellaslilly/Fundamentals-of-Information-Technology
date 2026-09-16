@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>MPP — поиск локальных минимумов</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #333; }
+        .chart-box { position: relative; height: 420px; margin: 30px 0; }
+        .error-box { background: #ffe0e0; color: #a00; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center; }
+        table { border-collapse: collapse; margin: 20px auto; }
+        th, td { border: 1px solid #ccc; padding: 6px 12px; text-align: center; }
+        th { background: #eee; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Поиск локальных минимумов f(x) = 20x·sin²(x) − x²</h1>
+    <div id="errorBox"></div>
+
+    <h2>График функции</h2>
+    <div class="chart-box"><canvas id="chartFunc"></canvas></div>
+
+    <h2>Зависимость числа вызовов f(x) от точности ε</h2>
+    <div class="chart-box"><canvas id="chartEps"></canvas></div>
+
+    <h2>Сходимость (изменение x на итерациях)</h2>
+    <div class="chart-box"><canvas id="chartConv"></canvas></div>
+
+    <div id="summaryTable"></div>
+</div>
+
+<script>
+const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
+
+function f(x) {
+    const s = Math.sin(x);
+    return 20 * x * s * s - x * x;
+}
+
+function buildFuncChart() {
+    const pts = [];
+    for (let x = -9; x <= -1.0001; x += 0.05) {
+        pts.push({ x: parseFloat(x.toFixed(3)), y: f(x) });
+    }
+    new Chart(document.getElementById('chartFunc'), {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'f(x)',
+                data: pts,
+                borderColor: 'blue',
+                borderWidth: 2,
+                pointRadius: 0,
+                showLine: true
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, parsing: false,
+            scales: {
+                x: { type: 'linear', title: { display: true, text: 'x' } },
+                y: { title: { display: true, text: 'f(x)' } }
+            }
+        }
+    });
+}
+
+function buildEpsChart(summaries) {
+    const labels = summaries.map(s => s.eps.toExponential(0));
+    const datasets = [];
+
+    // Одна линия на каждый найденный минимум
+    const numMins = summaries[0].results.length;
+    for (let i = 0; i < numMins; i++) {
+        datasets.push({
+            label: `Минимум ${i+1}`,
+            data: summaries.map(s => s.results[i].calls),
+            borderColor: COLORS[i % COLORS.length],
+            backgroundColor: COLORS[i % COLORS.length],
+            borderWidth: 2,
+            pointRadius: 6,
+            showLine: true
+        });
+    }
+
+    new Chart(document.getElementById('chartEps'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: 'eps' } },
+                y: { title: { display: true, text: 'Число вызовов f(x)' }, type: 'logarithmic' }
+            }
+        }
+    });
+}
+
+function buildConvChart(summaries) {
+    // Возьмём eps = 1e-4 и построим траекторию x(k) для каждого минимума
+    const targetEps = summaries.reduce((a, b) =>
+        Math.abs(a.eps - 1e-4) < Math.abs(b.eps - 1e-4) ? a : b
+    );
+
+    const maxIter = Math.max(...targetEps.results.map(r => r.history.length));
+    const labels = Array.from({ length: maxIter }, (_, i) => i);
+
+    const datasets = targetEps.results.map((r, i) => ({
+        label: `Минимум ${i+1} (eps=${targetEps.eps.toExponential(0)})`,
+        data: r.history.map(it => it.x),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS[i % COLORS.length],
+        borderWidth: 2,
+        pointRadius: 3,
+        showLine: true,
+        spanGaps: true
+    }));
+
+    new Chart(document.getElementById('chartConv'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: 'k (номер итерации)' } },
+                y: { title: { display: true, text: 'x_k' } }
+            }
+        }
+    });
+}
+
+function buildSummaryTable(summaries) {
+    let html = '<h2>Сводная таблица</h2><table>' +
+        '<tr><th>eps</th><th>Минимум</th><th>x*</th><th>f(x*)</th>' +
+        '<th>Итераций</th><th>Вызовов f(x)</th></tr>';
+
+    summaries.forEach(s => {
+        s.results.forEach((r, i) => {
+            html += `<tr>
+                <td>${s.eps.toExponential(0)}</td>
+                <td>${i+1}</td>
+                <td>${r.minimum.toFixed(8)}</td>
+                <td>${r.fmin.toFixed(8)}</td>
+                <td>${r.iterations}</td>
+                <td>${r.calls}</td>
+            </tr>`;
+        });
+    });
+    html += '</table>';
+    document.getElementById('summaryTable').innerHTML = html;
+}
+
+fetch('minima_data.json?t=' + Date.now())
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
+    .then(data => {
+        console.log('Загружено:', data);
+        if (!data.summaries || data.summaries.length === 0) {
+            document.getElementById('errorBox').innerHTML =
+                '<div class="error-box">В JSON нет поля "summaries".</div>';
+            return;
+        }
+        buildFuncChart();
+        buildEpsChart(data.summaries);
+        buildConvChart(data.summaries);
+        buildSummaryTable(data.summaries);
+    })
+    .catch(e => {
+        console.error(e);
+        document.getElementById('errorBox').innerHTML =
+            '<div class="error-box">Ошибка загрузки minima_data.json: ' + e.message +
+            '<br>Откройте через локальный сервер: <code>python -m http.server 8080</code></div>';
+    });
+</script>
+</body>
+</html>

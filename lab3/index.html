@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Численное дифференцирование и интегрирование</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #333; }
+        .chart-box { position: relative; height: 400px; margin: 30px 0; }
+        .selector { text-align: center; margin: 20px 0; }
+        select { padding: 8px; font-size: 1em; }
+        .info { text-align: center; font-size: 1.05em; color: #555; }
+        .error-box { background: #ffe0e0; color: #a00; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Численное дифференцирование и интегрирование</h1>
+    <div id="errorBox"></div>
+    <div class="info" id="info"></div>
+
+    <div class="selector">
+        <label>Шаг h: </label>
+        <select id="hSelect"></select>
+    </div>
+
+    <h2>Первая производная f'(x)</h2>
+    <div class="chart-box"><canvas id="chartD1"></canvas></div>
+
+    <h2>Погрешность первой производной</h2>
+    <div class="chart-box"><canvas id="chartD1Err"></canvas></div>
+
+    <h2>Вторая производная f''(x)</h2>
+    <div class="chart-box"><canvas id="chartD2"></canvas></div>
+
+    <h2>Погрешность второй производной</h2>
+    <div class="chart-box"><canvas id="chartD2Err"></canvas></div>
+
+    <h2>Интеграл методом трапеций</h2>
+    <div class="chart-box"><canvas id="chartInt"></canvas></div>
+</div>
+
+<script>
+let charts = {};
+
+function destroyCharts() {
+    Object.values(charts).forEach(c => c.destroy());
+    charts = {};
+}
+
+// Приведение null -> NaN для Chart.js (spanGaps не работает с null в линейной оси)
+function cleanArr(arr) {
+    return arr.map(v => (v === null || v === undefined) ? null : v);
+}
+
+function buildDerivCharts(dd) {
+    const labels = dd.x.map(v => v.toFixed(2));
+
+    const baseOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { x: { title: { display: true, text: 'x' } } },
+        plugins: { legend: { position: 'top' } }
+    };
+
+    // Уничтожаем только графики производных, не трогая интеграл
+    ['d1','d1Err','d2','d2Err'].forEach(k => { if (charts[k]) { charts[k].destroy(); delete charts[k]; } });
+
+    charts.d1 = new Chart(document.getElementById('chartD1'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "f'(x) точная", data: dd.d1_exact, borderColor: 'blue', borderWidth: 2, pointRadius: 2, fill: false },
+                { label: "f'(x) численная (h=" + dd.h + ")", data: dd.d1_approx, borderColor: 'red', borderDash: [5,5], borderWidth: 2, pointRadius: 2, fill: false }
+            ]
+        },
+        options: baseOpts
+    });
+
+    charts.d1Err = new Chart(document.getElementById('chartD1Err'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "Δf' = f'точн - f'числ", data: dd.d1_error, borderColor: 'orange', backgroundColor: 'rgba(255,165,0,0.2)', borderWidth: 2, pointRadius: 2, fill: true }
+            ]
+        },
+        options: baseOpts
+    });
+
+    charts.d2 = new Chart(document.getElementById('chartD2'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "f''(x) точная", data: dd.d2_exact, borderColor: 'green', borderWidth: 2, pointRadius: 2, fill: false },
+                { label: "f''(x) численная", data: cleanArr(dd.d2_approx), borderColor: 'purple', borderDash: [5,5], borderWidth: 2, pointRadius: 2, fill: false, spanGaps: true }
+            ]
+        },
+        options: baseOpts
+    });
+
+    charts.d2Err = new Chart(document.getElementById('chartD2Err'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: "Δf'' = f''точн - f''числ", data: cleanArr(dd.d2_error), borderColor: 'red', backgroundColor: 'rgba(255,0,0,0.2)', borderWidth: 2, pointRadius: 2, fill: true, spanGaps: true }
+            ]
+        },
+        options: baseOpts
+    });
+
+    document.getElementById('info').innerHTML =
+        `h = ${dd.h}, количество точек = ${dd.x.length}`;
+}
+
+function buildIntegralChart(data) {
+    if (!data.integrals || data.integrals.length === 0) {
+        document.getElementById('errorBox').innerHTML =
+            '<div class="error-box">В JSON нет поля "integrals" или оно пустое. Проверьте вывод Go-программы.</div>';
+        return;
+    }
+
+    // Точки в формате {x, y} для линейной оси
+    const approxPts = data.integrals.map(i => ({ x: i.m, y: i.approx }));
+    const exactPts  = data.integrals.map(i => ({ x: i.m, y: i.exact }));
+    const errorPts  = data.integrals.map(i => ({ x: i.m, y: i.error }));
+
+    if (charts.intg) { charts.intg.destroy(); delete charts.intg; }
+
+    charts.intg = new Chart(document.getElementById('chartInt'), {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    label: 'Приближённое значение',
+                    data: approxPts,
+                    borderColor: 'blue',
+                    backgroundColor: 'blue',
+                    borderWidth: 2,
+                    pointRadius: 6,
+                    showLine: true,
+                    tension: 0.1
+                },
+                {
+                    label: 'Точное значение',
+                    data: exactPts,
+                    borderColor: 'red',
+                    backgroundColor: 'red',
+                    borderDash: [5,5],
+                    borderWidth: 2,
+                    pointRadius: 6,
+                    showLine: true
+                },
+                {
+                    label: 'Погрешность (правая ось)',
+                    data: errorPts,
+                    borderColor: 'green',
+                    backgroundColor: 'green',
+                    borderWidth: 2,
+                    pointRadius: 6,
+                    showLine: true,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            parsing: false, // важно для {x, y}!
+            scales: {
+                x: {
+                    type: 'linear',
+                    title: { display: true, text: 'm (число разбиений)' },
+                    ticks: { stepSize: 10 }
+                },
+                y: {
+                    title: { display: true, text: 'Значение интеграла' },
+                    position: 'left'
+                },
+                y1: {
+                    title: { display: true, text: 'Погрешность' },
+                    position: 'right',
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+fetch('diff_int_data.json?t=' + Date.now()) // обход кэша браузера
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
+    .then(data => {
+        console.log('Загружено:', data);
+        if (!data.derivatives || data.derivatives.length === 0) {
+            document.getElementById('errorBox').innerHTML =
+                '<div class="error-box">В JSON нет поля "derivatives". Перезапустите Go-программу.</div>';
+            return;
+        }
+
+        const sel = document.getElementById('hSelect');
+        data.derivatives.forEach((dd, i) => {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.text = 'h = ' + dd.h;
+            sel.appendChild(opt);
+        });
+        sel.addEventListener('change', () => buildDerivCharts(data.derivatives[sel.value]));
+        buildDerivCharts(data.derivatives[0]);
+        buildIntegralChart(data);
+    })
+    .catch(e => {
+        console.error(e);
+        document.getElementById('errorBox').innerHTML =
+            '<div class="error-box">Ошибка загрузки diff_int_data.json: ' + e.message + '<br>Убедитесь, что файл существует и вы открываете index.html через локальный сервер, а не file://</div>';
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Аппроксимация функции (PNS)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #333; }
+        .chart-container { position: relative; height: 400px; width: 100%; margin-bottom: 40px; }
+        .info { text-align: center; font-size: 1.1em; color: #555; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Аппроксимация f(x) = sin²(x) - x/5</h1>
+        <div class="info" id="coeffs-info">Загрузка коэффициентов...</div>
+
+        <h2>График функции и аппроксимации</h2>
+        <div class="chart-container">
+            <canvas id="mainChart"></canvas>
+        </div>
+
+        <h2>График погрешности d(x) = f(x) - φ(x)</h2>
+        <div class="chart-container">
+            <canvas id="errorChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        fetch('chart_data.json')
+            .then(response => response.json())
+            .then(data => {
+                // Вывод коэффициентов
+                const c = data.coefficients;
+                document.getElementById('coeffs-info').innerHTML = 
+                    `φ(x) = ${c[0].toFixed(4)} + ${c[1].toFixed(4)}·x + ${c[2].toFixed(4)}·x²`;
+
+                // Подготовка данных
+                const labels = data.func_points.map(p => p.x.toFixed(2));
+                const fData = data.func_points.map(p => p.y);
+                const phiData = data.approx_points.map(p => p.y);
+                const errData = data.error_points.map(p => p.y);
+
+                // 1. График f(x) и phi(x)
+                const ctx1 = document.getElementById('mainChart').getContext('2d');
+                new Chart(ctx1, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'f(x) = sin²(x) - x/5',
+                                data: fData,
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                                borderWidth: 2,
+                                pointRadius: 3,
+                                fill: false,
+                                tension: 0.1
+                            },
+                            {
+                                label: 'φ(x) — аппроксимация',
+                                data: phiData,
+                                borderColor: 'rgba(255, 99, 132, 1)',
+                                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                pointRadius: 3,
+                                fill: false,
+                                tension: 0.1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'x' } },
+                            y: { title: { display: true, text: 'y' } }
+                        }
+                    }
+                });
+
+                // 2. График погрешности
+                const ctx2 = document.getElementById('errorChart').getContext('2d');
+                new Chart(ctx2, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'd(x) = f(x) - φ(x)',
+                                data: errData,
+                                borderColor: 'rgba(75, 192, 192, 1)',
+                                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                borderWidth: 2,
+                                pointRadius: 3,
+                                fill: true,
+                                tension: 0.1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'x' } },
+                            y: { title: { display: true, text: 'Погрешность' } }
+                        }
+                    }
+                });
+            })
+            .catch(error => console.error('Ошибка загрузки данных:', error));
+    </script>
+</body>
+</html>

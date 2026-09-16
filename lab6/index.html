@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Решение задачи Коши (RK4)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: #333; }
+        .chart-box { position: relative; height: 420px; margin: 30px 0; }
+        .error-box { background: #ffe0e0; color: #a00; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center; }
+        .selector { text-align: center; margin: 20px 0; }
+        select { padding: 8px; font-size: 1em; }
+        table { border-collapse: collapse; margin: 20px auto; font-size: 0.9em; }
+        th, td { border: 1px solid #ccc; padding: 5px 10px; text-align: center; }
+        th { background: #eee; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Решение задачи Коши методом RK4 (M8)</h1>
+    <div id="errorBox"></div>
+
+    <h2>Решение u₁(x)</h2>
+    <div class="chart-box"><canvas id="chartU1"></canvas></div>
+
+    <h2>Решение u₂(x)</h2>
+    <div class="chart-box"><canvas id="chartU2"></canvas></div>
+
+    <h2>Погрешности d₁(x), d₂(x)</h2>
+    <div class="chart-box"><canvas id="chartErr"></canvas></div>
+
+    <h2>Зависимость погрешности в x=b от h</h2>
+    <div class="chart-box"><canvas id="chartConv"></canvas></div>
+
+    <div id="summary"></div>
+</div>
+
+<script>
+const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4'];
+
+function makeLineDataset(label, data, color, dashed = false) {
+    return {
+        label, data,
+        borderColor: color,
+        backgroundColor: color,
+        borderWidth: 2,
+        pointRadius: 3,
+        showLine: true,
+        borderDash: dashed ? [5, 5] : []
+    };
+}
+
+function buildSolutionCharts(solutions) {
+    // Показываем только решение при h = h1 (первое) и точное — их легко сравнить
+    const h1Sol = solutions[0];
+
+    // u1
+    new Chart(document.getElementById('chartU1'), {
+        type: 'line',
+        data: {
+            labels: h1Sol.rows.map(r => r.x.toFixed(2)),
+            datasets: [
+                makeLineDataset('u₁ численное (h=' + h1Sol.h + ')', h1Sol.rows.map(r => r.u1), 'blue'),
+                makeLineDataset('u₁ точное (2x)', h1Sol.rows.map(r => r.u1_exact), 'red', true)
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+            scales: { x: { title: { display: true, text: 'x' } }, y: { title: { display: true, text: 'u₁' } } } }
+    });
+
+    // u2
+    new Chart(document.getElementById('chartU2'), {
+        type: 'line',
+        data: {
+            labels: h1Sol.rows.map(r => r.x.toFixed(2)),
+            datasets: [
+                makeLineDataset('u₂ численное (h=' + h1Sol.h + ')', h1Sol.rows.map(r => r.u2), 'green'),
+                makeLineDataset('u₂ точное (eˣ)', h1Sol.rows.map(r => r.u2_exact), 'red', true)
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+            scales: { x: { title: { display: true, text: 'x' } }, y: { title: { display: true, text: 'u₂' } } } }
+    });
+
+    // Погрешности d1, d2
+    new Chart(document.getElementById('chartErr'), {
+        type: 'line',
+        data: {
+            labels: h1Sol.rows.map(r => r.x.toFixed(2)),
+            datasets: [
+                makeLineDataset('d₁ = u₁ − u₁*', h1Sol.rows.map(r => r.d1), 'orange'),
+                makeLineDataset('d₂ = u₂ − u₂*', h1Sol.rows.map(r => r.d2), 'purple')
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+            scales: { x: { title: { display: true, text: 'x' } }, y: { title: { display: true, text: 'Погрешность' } } } }
+    });
+
+    // Сходимость: |d| в x=b как функция h
+    const labels = solutions.map(s => s.h.toExponential(2));
+    const d1End = solutions.map(s => Math.abs(s.max_d1_end));
+    const d2End = solutions.map(s => Math.abs(s.max_d2_end));
+
+    new Chart(document.getElementById('chartConv'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: '|d₁(b)|', data: d1End, borderColor: 'blue', borderWidth: 2, pointRadius: 8, showLine: true },
+                { label: '|d₂(b)|', data: d2End, borderColor: 'red', borderWidth: 2, pointRadius: 8, showLine: true },
+                { label: 'eps = 1e-4', data: labels.map(() => 1e-4), borderColor: 'green', borderDash: [6,6], borderWidth: 2, pointRadius: 0, showLine: true }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: 'h' } },
+                y: { type: 'logarithmic', title: { display: true, text: 'Погрешность в x=b' } }
+            }
+        }
+    });
+}
+
+function buildSummary(solutions) {
+    let html = '<h2>Сводная таблица по сеткам</h2><table>' +
+        '<tr><th>h</th><th>Шагов</th><th>|d₁(b)|</th><th>|d₂(b)|</th></tr>';
+    solutions.forEach(s => {
+        html += `<tr>
+            <td>${s.h.toFixed(6)}</td>
+            <td>${s.steps}</td>
+            <td>${Math.abs(s.max_d1_end).toExponential(3)}</td>
+            <td>${Math.abs(s.max_d2_end).toExponential(3)}</td>
+        </tr>`;
+    });
+    html += '</table>';
+    document.getElementById('summary').innerHTML = html;
+}
+
+fetch('ode_data.json?t=' + Date.now())
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
+    .then(data => {
+        console.log('Загружено:', data);
+        if (!Array.isArray(data) || data.length === 0) {
+            document.getElementById('errorBox').innerHTML =
+                '<div class="error-box">Пустой JSON или нет данных.</div>';
+            return;
+        }
+        buildSolutionCharts(data);
+        buildSummary(data);
+    })
+    .catch(e => {
+        console.error(e);
+        document.getElementById('errorBox').innerHTML =
+            '<div class="error-box">Ошибка загрузки ode_data.json: ' + e.message +
+            '<br>Запустите: <code>python -m http.server 8080</code></div>';
+    });
+</script>
+</body>
+</html>
